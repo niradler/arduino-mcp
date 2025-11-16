@@ -738,5 +738,9 @@ def troubleshooting_guide():
 3. Check installed: `list_installed_libraries`"""
 
 
-if __name__ == "__main__":
+def main():
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
