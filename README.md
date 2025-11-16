@@ -11,6 +11,7 @@ A comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - **Core Management**: Search, install, and list Arduino cores
 - **Library Management**: Search, install, and list Arduino libraries
 - **Sketch Operations**: Create, compile, and upload sketches
+- **Enhanced Serial Monitor**: Bidirectional communication, buffering, file export
 - **Image Conversion**: Convert images to C arrays for display applications (requires ImageMagick)
 - **Configuration**: Initialize config, clean cache
 
@@ -24,6 +25,7 @@ A comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 
 - **Blink LED Example**: Basic LED blinking sketch template
 - **Sensor Reading Example**: Analog sensor reading template
+- **Sketch Project Workflow**: IDE-like experience with board attach
 - **Full Development Workflow**: Complete Arduino development guide
 - **Troubleshooting Guide**: Common issues and solutions
 
@@ -40,6 +42,22 @@ A comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - [Arduino CLI](https://arduino.github.io/arduino-cli/latest/installation/)
 - [ImageMagick](https://imagemagick.org/script/download.php) (optional, for image conversion)
+
+## Environment Variables
+
+Customize the server behavior with these optional environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARDUINO_CLI_PATH` | `arduino-cli` | Path to Arduino CLI executable |
+| `MCP_SKETCH_DIR` | OS-specific* | Override default sketch directory |
+| `ARDUINO_SERIAL_BUFFER_SIZE` | `10` | Serial buffer size in MB |
+| `ARDUINO_CONFIG_FILE` | Auto-detected | Custom Arduino CLI config file path |
+
+*Default sketch directories:
+- Windows: `%DOCUMENTS%\Arduino`
+- macOS: `~/Documents/Arduino`
+- Linux: `~/Arduino`
 
 ## Installation
 
@@ -159,7 +177,41 @@ Once running in Cursor IDE, you can test the tools directly in the chat interfac
 
 ## Example Workflows
 
-### 1. Basic Setup and Blink LED
+### 1. Project-Based Workflow with Board Attach (Recommended)
+
+```python
+# Find your connected board
+list_connected_boards()
+
+# Create a new sketch
+create_new_sketch("MyProject")
+
+# Attach board settings to sketch (IDE-like experience!)
+arduino_cli_command("board attach -p COM3 -b arduino:avr:uno MyProject")
+
+# This creates sketch.yaml with your board settings
+
+# Now compile and upload without repeating FQBN/port
+compile_sketch("MyProject", "")  # Reads from sketch.yaml
+upload_sketch("MyProject", "", "")  # Reads from sketch.yaml
+
+# Monitor serial output with bidirectional communication
+serial_monitor(
+    port="COM3",
+    baudrate=115200,
+    duration=30,
+    send_commands="LED ON\nLED OFF",  # Send commands to device
+    save_to_file="output.log"  # Save buffer to file
+)
+```
+
+**Why use board attach?**
+- Settings persist per-sketch (not globally)
+- No need to repeat FQBN and port every time
+- Team-friendly (sketch.yaml can be version controlled)
+- Works exactly like Arduino IDE 2.x
+
+### 2. Basic Setup and Blink LED
 
 ```python
 # Check if Arduino CLI is installed
@@ -182,7 +234,32 @@ compile_sketch("./sketches/BlinkLED", "arduino:avr:uno")
 upload_sketch("./sketches/BlinkLED", "arduino:avr:uno", "COM3")
 ```
 
-### 2. Library Installation and Usage
+### 2. Basic Setup and Blink LED
+
+```python
+# Check if Arduino CLI is installed
+arduino_cli_command("version")
+
+# Find connected Arduino boards
+list_connected_boards()
+list_ports(arduino_only=True)
+
+# Create a new sketch
+create_new_sketch("BlinkLED", "./sketches")
+
+# Use the blink_led_example prompt for code template
+
+# Compile the sketch
+compile_sketch("./sketches/BlinkLED", "arduino:avr:uno")
+
+# Upload to board
+upload_sketch("./sketches/BlinkLED", "arduino:avr:uno", "COM3")
+
+# Monitor output
+serial_monitor("COM3", baudrate=115200, duration=20)
+```
+
+### 3. Library Installation and Usage
 
 ```python
 # Search for a library
@@ -195,7 +272,45 @@ install_library("Adafruit SSD1306")
 list_installed_libraries()
 ```
 
-### 3. Image to C Array Conversion
+### 4. Enhanced Serial Monitor Features
+
+```python
+# Basic monitoring (115200 is now the default)
+serial_monitor("COM3", duration=30)
+
+# Send commands while monitoring (bidirectional)
+serial_monitor(
+    port="COM3",
+    baudrate=115200,
+    duration=30,
+    send_commands="GET_STATUS\nSET_LED 1"
+)
+
+# Save buffer to file for analysis
+serial_monitor(
+    port="COM3",
+    baudrate=115200,
+    duration=60,
+    save_to_file="sensor_data.log"
+)
+
+# Combined: send commands and save output
+serial_monitor(
+    port="COM3",
+    baudrate=115200,
+    duration=45,
+    send_commands="START_LOGGING",
+    save_to_file="experiment_results.txt"
+)
+```
+
+**Buffer Features:**
+- Circular buffer (10MB default, configurable via env var)
+- Memory-safe (won't crash on long-running captures)
+- Thread-safe operation
+- Automatic statistics (lines captured, buffer usage)
+
+### 5. Image to C Array Conversion
 
 ```python
 # Check ImageMagick installation
@@ -211,7 +326,7 @@ convert_image_to_c_array(
 )
 ```
 
-### 4. Resource Access
+### 6. Resource Access
 
 ```python
 # Read a sketch file

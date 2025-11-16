@@ -2,6 +2,7 @@ import subprocess
 import json
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from .platform_utils import env_config
 
 
 class ArduinoCLIError(Exception):
@@ -9,8 +10,8 @@ class ArduinoCLIError(Exception):
 
 
 class ArduinoCLI:
-    def __init__(self, cli_path: str = "arduino-cli"):
-        self.cli_path = cli_path
+    def __init__(self, cli_path: Optional[str] = None):
+        self.cli_path = cli_path or env_config.ARDUINO_CLI_PATH
     
     def run_command(self, args: List[str], check_installation: bool = True) -> Dict[str, Any]:
         if check_installation and not self.is_installed():
@@ -21,6 +22,8 @@ class ArduinoCLI:
                 [self.cli_path] + args,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='ignore',
                 check=True
             )
             return {
@@ -85,21 +88,29 @@ class ArduinoCLI:
         result = self.run_command(["core", "search", query, "--format", "json"])
         if result["success"]:
             try:
-                return json.loads(result["stdout"])
+                stdout = result.get("stdout", "")
+                if stdout and stdout.strip():
+                    return json.loads(stdout)
+                else:
+                    return {"platforms": []}
             except json.JSONDecodeError:
-                return {"error": "Failed to parse JSON", "raw": result["stdout"]}
+                return {"error": "Failed to parse JSON", "raw": result.get("stdout", "")}
         return result
     
     def core_install(self, core: str) -> Dict[str, Any]:
         return self.run_command(["core", "install", core])
     
     def lib_search(self, query: str) -> Dict[str, Any]:
-        result = self.run_command(["lib", "search", query, "--format", "json"])
+        result = self.run_command(["lib", "search", query, "--format", "json", "--omit-releases-details"])
         if result["success"]:
             try:
-                return json.loads(result["stdout"])
+                stdout = result.get("stdout", "")
+                if stdout and stdout.strip():
+                    return json.loads(stdout)
+                else:
+                    return {"libraries": []}
             except json.JSONDecodeError:
-                return {"error": "Failed to parse JSON", "raw": result["stdout"]}
+                return {"error": "Failed to parse JSON", "raw": result.get("stdout", "")}
         return result
     
     def lib_install(self, library: str) -> Dict[str, Any]:

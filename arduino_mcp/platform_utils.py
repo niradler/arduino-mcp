@@ -1,5 +1,7 @@
+import os
 import platform
 import sys
+from pathlib import Path
 from typing import Optional
 
 
@@ -88,5 +90,38 @@ class PlatformConfig:
         return f"{prefix} {message}"
 
 
+class EnvConfig:
+    ARDUINO_CLI_PATH: str = os.getenv('ARDUINO_CLI_PATH', 'arduino-cli')
+    ARDUINO_SERIAL_BUFFER_SIZE: int = int(os.getenv('ARDUINO_SERIAL_BUFFER_SIZE', '10'))
+    MCP_SKETCH_DIR: Optional[str] = os.getenv('MCP_SKETCH_DIR')
+    ARDUINO_CONFIG_FILE: Optional[str] = os.getenv('ARDUINO_CONFIG_FILE')
+    
+    @staticmethod
+    def get_default_sketch_dir() -> Path:
+        if EnvConfig.MCP_SKETCH_DIR:
+            return Path(EnvConfig.MCP_SKETCH_DIR).expanduser()
+        
+        os_type = platform.system()
+        home = Path.home()
+        
+        if os_type == "Windows":
+            documents = home / "Documents"
+            return documents / "Arduino"
+        elif os_type == "Darwin":
+            return home / "Documents" / "Arduino"
+        else:
+            return home / "Arduino"
+    
+    @staticmethod
+    def has_overrides() -> bool:
+        return bool(
+            os.getenv('ARDUINO_CLI_PATH') or
+            os.getenv('MCP_SKETCH_DIR') or
+            os.getenv('ARDUINO_SERIAL_BUFFER_SIZE') or
+            os.getenv('ARDUINO_CONFIG_FILE')
+        )
+
+
 platform_config = PlatformConfig()
+env_config = EnvConfig()
 

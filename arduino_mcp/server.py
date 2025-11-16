@@ -6,7 +6,8 @@ import glob
 from .cli_wrapper import ArduinoCLI, ArduinoCLIError
 from .port_detector import PortDetector
 from .image_converter import ImageConverter
-from .platform_utils import platform_config
+from .platform_utils import platform_config, env_config
+from .serial_manager import SerialBuffer
 
 mcp = FastMCP("Arduino MCP Server")
 
@@ -28,6 +29,20 @@ if ImageConverter.is_imagemagick_installed():
 else:
     print(platform_config.format_status("skip", "ImageMagick: Not Found (optional)"))
     print("  Install: https://imagemagick.org/script/download.php")
+
+sketch_dir = env_config.get_default_sketch_dir()
+print(platform_config.format_status("info", f"Sketch Directory: {sketch_dir}"))
+if env_config.has_overrides():
+    print(platform_config.format_status("info", "Environment Overrides Active:"))
+    if env_config.ARDUINO_CLI_PATH != 'arduino-cli':
+        print(f"  ARDUINO_CLI_PATH={env_config.ARDUINO_CLI_PATH}")
+    if env_config.MCP_SKETCH_DIR:
+        print(f"  MCP_SKETCH_DIR={env_config.MCP_SKETCH_DIR}")
+    if env_config.ARDUINO_SERIAL_BUFFER_SIZE != 10:
+        print(f"  ARDUINO_SERIAL_BUFFER_SIZE={env_config.ARDUINO_SERIAL_BUFFER_SIZE}MB")
+    if env_config.ARDUINO_CONFIG_FILE:
+        print(f"  ARDUINO_CONFIG_FILE={env_config.ARDUINO_CONFIG_FILE}")
+
 print("="*60 + "\n")
 
 
@@ -122,6 +137,12 @@ async def verify_port(port: str, ctx: Context) -> str:
     }
 )
 async def search(query: str, package_type: str, ctx: Context) -> str:
+    """
+    Search for Arduino cores or libraries.
+    
+    Note: Library searches return only latest version details to reduce output size.
+    Use more specific search terms to narrow results (e.g., "Adafruit_SSD1306" instead of "display").
+    """
     if package_type not in ["core", "library"]:
         return "Error: package_type must be 'core' or 'library'"
     
@@ -223,6 +244,18 @@ async def list_installed_libraries(ctx: Context) -> str:
     }
 )
 async def compile_sketch(sketch_path: str, fqbn: str, ctx: Context) -> str:
+    """
+    Compile an Arduino sketch.
+    
+    TIP: If you used `arduino-cli board attach` on this sketch, FQBN is optional!
+    The board settings will be read from sketch.yaml automatically.
+    
+    For project-based workflows, use board attach first:
+    arduino_cli_command("board attach -p COM3 -b arduino:avr:uno MySketch")
+    
+    Then compile without specifying FQBN each time.
+    See the sketch_project_workflow prompt for details.
+    """
     try:
         await ctx.info(f"Starting compilation of {sketch_path} for {fqbn}")
         await ctx.report_progress(progress=0, total=100)
@@ -251,6 +284,18 @@ async def compile_sketch(sketch_path: str, fqbn: str, ctx: Context) -> str:
     }
 )
 async def upload_sketch(sketch_path: str, fqbn: str, port: str, ctx: Context) -> str:
+    """
+    Upload a compiled sketch to an Arduino board.
+    
+    TIP: If you used `arduino-cli board attach` on this sketch, FQBN and port are optional!
+    The settings will be read from sketch.yaml automatically.
+    
+    For project-based workflows, use board attach first:
+    arduino_cli_command("board attach -p COM3 -b arduino:avr:uno MySketch")
+    
+    Then upload without specifying FQBN/port each time.
+    See the sketch_project_workflow prompt for details.
+    """
     try:
         await ctx.info(f"Starting upload to {port}")
         await ctx.report_progress(progress=0, total=100)
@@ -305,29 +350,42 @@ async def clean_cache(ctx: Context) -> str:
 
 @mcp.tool(
     annotations={
-        "title": "Serial Monitor",
-        "readOnlyHint": True,
+        "title": "Enhanced Serial Monitor with Bidirectional Communication",
+        "readOnlyHint": False,
         "openWorldHint": True
     }
 )
 async def serial_monitor(
     port: str,
     duration: int = 20,
-    baudrate: int = 9600,
+    baudrate: int = 115200,
+    send_commands: Optional[str] = None,
+    save_to_file: Optional[str] = None,
     ctx: Context = None
 ) -> str:
     import serial
     import time
     
+    buffer = SerialBuffer(max_size_mb=env_config.ARDUINO_SERIAL_BUFFER_SIZE)
+    
     if ctx:
         await ctx.info(f"Opening serial monitor on {port} at {baudrate} baud for {duration}s")
+        if send_commands:
+            await ctx.info(f"Will send commands: {send_commands[:50]}...")
         await ctx.report_progress(progress=0, total=duration)
     
     try:
         ser = serial.Serial(port, baudrate, timeout=1)
         time.sleep(0.5)
         
-        output_lines = []
+        if send_commands:
+            commands = send_commands.split('\\n') if '\\n' in send_commands else [send_commands]
+            for cmd in commands:
+                ser.write((cmd + '\n').encode('utf-8'))
+                if ctx:
+                    await ctx.info(f"Sent: {cmd}")
+                time.sleep(0.1)
+        
         start_time = time.time()
         
         while (time.time() - start_time) < duration:
@@ -335,11 +393,11 @@ async def serial_monitor(
                 try:
                     line = ser.readline().decode('utf-8', errors='ignore').strip()
                     if line:
-                        output_lines.append(line)
+                        buffer.append(line)
                         if ctx:
                             await ctx.info(f"Serial: {line[:50]}...")
                 except Exception as decode_error:
-                    output_lines.append(f"[Decode Error: {decode_error}]")
+                    buffer.append(f"[Decode Error: {decode_error}]")
             
             if ctx:
                 elapsed = int(time.time() - start_time)
@@ -349,8 +407,16 @@ async def serial_monitor(
         
         ser.close()
         
+        stats = buffer.get_stats()
+        output_lines = buffer.get_all()
+        
+        if save_to_file:
+            buffer.dump_to_file(save_to_file)
+            if ctx:
+                await ctx.info(f"Buffer saved to: {save_to_file}")
+        
         if ctx:
-            await ctx.info(f"Serial monitor closed. Captured {len(output_lines)} lines")
+            await ctx.info(f"Serial monitor closed. {stats}")
         
         if not output_lines:
             return f"No serial output received on {port} in {duration} seconds.\n\nTips:\n- Check if sketch is running\n- Verify correct baud rate (current: {baudrate})\n- Ensure Serial.begin() in sketch"
@@ -359,7 +425,14 @@ async def serial_monitor(
         result += "=" * 60 + "\n"
         result += "\n".join(output_lines)
         result += "\n" + "=" * 60
-        result += f"\n\nCaptured {len(output_lines)} lines in {duration} seconds"
+        result += f"\n\nBuffer Statistics:\n"
+        result += f"- Captured: {stats['current_lines']} lines\n"
+        result += f"- Total processed: {stats['total_lines_captured']} lines\n"
+        result += f"- Buffer capacity: {stats['max_capacity']} lines\n"
+        if send_commands:
+            result += f"- Commands sent: {len(commands)}\n"
+        if save_to_file:
+            result += f"- Saved to: {save_to_file}\n"
         
         return result
         
@@ -526,19 +599,111 @@ void loop() {
 
 
 @mcp.prompt()
+def sketch_project_workflow():
+    return """Arduino Sketch Project Workflow - IDE-like Experience with Board Attach
+
+## The Problem
+Without board attach, you must specify board (FQBN) and port every time you compile/upload.
+
+## The Solution: Board Attach
+Use `arduino-cli board attach` to save board and port settings directly to your sketch.
+This creates a `sketch.yaml` file in your sketch directory, just like Arduino IDE does!
+
+## How to Use Board Attach
+
+1. **Create your sketch**:
+   ```
+   arduino_cli_command("sketch new MyProject")
+   ```
+
+2. **Attach board and port to sketch**:
+   ```
+   arduino_cli_command("board attach -p COM3 -b arduino:avr:uno MyProject")
+   ```
+   
+   This saves settings to `MyProject/sketch.yaml`
+
+3. **Now compile/upload without repeating settings**:
+   ```
+   arduino_cli_command("compile MyProject")
+   arduino_cli_command("upload MyProject")
+   ```
+   
+   No need to specify FQBN or port - they're saved in sketch.yaml!
+
+## Benefits
+
+✓ **Project Persistence**: Settings saved per-sketch, not globally
+✓ **Team Friendly**: sketch.yaml can be committed to git
+✓ **IDE Compatible**: Same format Arduino IDE 2.x uses
+✓ **Less Typing**: Compile/upload without repeating FQBN/port
+
+## What Gets Saved
+
+The sketch.yaml file contains:
+- Board FQBN (e.g., arduino:avr:uno)
+- Port (e.g., /dev/ttyUSB0 or COM3)
+- Programmer (if specified)
+- Board-specific options
+
+## Example Workflow
+
+```bash
+# Create project
+arduino_cli_command("sketch new WeatherStation")
+
+# Find connected board
+list_connected_boards()
+
+# Attach board to project
+arduino_cli_command("board attach -p COM3 -b arduino:avr:uno WeatherStation")
+
+# Work on your sketch...
+# (edit WeatherStation/WeatherStation.ino)
+
+# Compile & upload - no FQBN/port needed!
+arduino_cli_command("compile WeatherStation")
+arduino_cli_command("upload WeatherStation")
+```
+
+## Learn More
+https://arduino.github.io/arduino-cli/1.3/commands/arduino-cli_board_attach/
+
+**TIP**: Always use board attach for project-based workflows. It makes Arduino CLI work like the IDE!"""
+
+
+@mcp.prompt()
 def full_development_workflow():
-    return """Complete Arduino development workflow:
+    return """Complete Arduino development workflow with project persistence:
 
-1. **Setup**: Check if Arduino CLI is installed using `check_arduino_cli_installed`
-2. **Board Detection**: Find connected boards with `list_connected_boards` and `find_arduino_ports`
-3. **Core Installation**: Search and install the appropriate core for your board using `search_cores` and `install_core`
-4. **Library Management**: Search for required libraries with `search_libraries` and install with `install_library`
-5. **Sketch Creation**: Create a new sketch using `create_new_sketch` or read existing with `sketch://path`
-6. **Compilation**: Compile the sketch with `compile_sketch` providing sketch path and FQBN
-7. **Upload**: Upload to board using `upload_sketch` with correct port
-8. **Debugging**: Use serial monitor or check compilation errors
+1. **Setup**: Check if Arduino CLI is installed
+2. **Board Detection**: Find connected boards with `list_connected_boards`
+3. **Core Installation**: Search and install the appropriate core for your board
+4. **Sketch Creation**: Create a new sketch using `create_new_sketch`
+5. **Board Attach** (RECOMMENDED): Attach board to sketch for IDE-like experience
+   ```
+   arduino_cli_command("board attach -p COM3 -b arduino:avr:uno MySketch")
+   ```
+   This creates `sketch.yaml` and saves board/port settings per-project!
+6. **Library Management**: Search and install required libraries with `install_library`
+7. **Compilation**: Compile the sketch
+   - With board attach: `compile_sketch(sketch_path, fqbn="")`  # FQBN from sketch.yaml
+   - Without: `compile_sketch(sketch_path, fqbn="arduino:avr:uno")`
+8. **Upload**: Upload to board
+   - With board attach: `upload_sketch(sketch_path, fqbn="", port="")`  # From sketch.yaml
+   - Without: `upload_sketch(sketch_path, fqbn="arduino:avr:uno", port="COM3")`
+9. **Monitoring**: Use `serial_monitor` to view output and send commands
 
-Common FQBNs:
+## Project-Based Workflow Benefits
+Using `board attach` (step 5) makes Arduino CLI work like Arduino IDE:
+- Settings persist per-sketch
+- No need to repeat FQBN/port
+- sketch.yaml can be version controlled
+- Team members get correct settings automatically
+
+See the `sketch_project_workflow` prompt for detailed board attach guide!
+
+## Common FQBNs:
 - Arduino Uno: `arduino:avr:uno`
 - Arduino Mega: `arduino:avr:mega`
 - Arduino Nano: `arduino:avr:nano`
