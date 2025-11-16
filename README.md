@@ -47,14 +47,15 @@ A comprehensive [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 
 Customize the server behavior with these optional environment variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ARDUINO_CLI_PATH` | `arduino-cli` | Path to Arduino CLI executable |
-| `MCP_SKETCH_DIR` | OS-specific* | Override default sketch directory |
-| `ARDUINO_SERIAL_BUFFER_SIZE` | `10` | Serial buffer size in MB |
-| `ARDUINO_CONFIG_FILE` | Auto-detected | Custom Arduino CLI config file path |
+| Variable                     | Default       | Description                         |
+| ---------------------------- | ------------- | ----------------------------------- |
+| `ARDUINO_CLI_PATH`           | `arduino-cli` | Path to Arduino CLI executable      |
+| `MCP_SKETCH_DIR`             | OS-specific\* | Override default sketch directory   |
+| `ARDUINO_SERIAL_BUFFER_SIZE` | `10`          | Serial buffer size in MB            |
+| `ARDUINO_CONFIG_FILE`        | Auto-detected | Custom Arduino CLI config file path |
 
-*Default sketch directories:
+\*Default sketch directories:
+
 - Windows: `%DOCUMENTS%\Arduino`
 - macOS: `~/Documents/Arduino`
 - Linux: `~/Arduino`
@@ -206,6 +207,7 @@ serial_monitor(
 ```
 
 **Why use board attach?**
+
 - Settings persist per-sketch (not globally)
 - No need to repeat FQBN and port every time
 - Team-friendly (sketch.yaml can be version controlled)
@@ -305,6 +307,7 @@ serial_monitor(
 ```
 
 **Buffer Features:**
+
 - Circular buffer (10MB default, configurable via env var)
 - Memory-safe (won't crash on long-running captures)
 - Thread-safe operation

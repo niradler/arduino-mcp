@@ -11,6 +11,13 @@
                 "arduino_mcp.server"
             ],
             "env": {}
+        },
+        "arduino-uvx": {
+            "command": "uvx",
+            "args": [
+                "arduino-mcp"
+            ],
+            "env": {}
         }
     }
 }
