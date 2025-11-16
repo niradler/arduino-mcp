@@ -1,0 +1,16 @@
+{
+    "mcpServers": {
+        "arduino": {
+            "command": "uv",
+            "args": [
+                "--directory",
+                "C:/Projects/mcp/arduino-mcp",
+                "run",
+                "python",
+                "-m",
+                "arduino_mcp.server"
+            ],
+            "env": {}
+        }
+    }
+}
