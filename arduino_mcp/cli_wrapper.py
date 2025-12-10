@@ -1,5 +1,6 @@
 import subprocess
 import json
+import shutil
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from .platform_utils import env_config
@@ -11,7 +12,10 @@ class ArduinoCLIError(Exception):
 
 class ArduinoCLI:
     def __init__(self, cli_path: Optional[str] = None):
-        self.cli_path = cli_path or env_config.ARDUINO_CLI_PATH
+        if cli_path:
+            self.cli_path = cli_path
+        else:
+            self.cli_path = shutil.which(env_config.ARDUINO_CLI_PATH) or env_config.ARDUINO_CLI_PATH
     
     def run_command(self, args: List[str], check_installation: bool = True) -> Dict[str, Any]:
         if check_installation and not self.is_installed():

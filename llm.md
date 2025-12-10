@@ -57,6 +57,7 @@ else:
 ```
 
 **Common CLI patterns:**
+
 - Board operations: `board list`, `board details --fqbn <FQBN>`
 - Core management: `core search`, `core install`, `core list`
 - Library management: `lib search`, `lib install`, `lib list`
@@ -74,11 +75,13 @@ best_port = PortDetector.get_best_port()
 ```
 
 **Platform-specific patterns:**
+
 - Windows: `COM*` ports (e.g., COM3, COM4)
 - macOS: `/dev/tty.*` and `/dev/cu.*` (prefer `cu` for writing)
 - Linux: `/dev/ttyUSB*`, `/dev/ttyACM*`
 
 **Arduino identification keywords:**
+
 - "Arduino"
 - "CH340" (common USB-to-serial chip)
 - "CP210" (Silicon Labs chip)
@@ -105,6 +108,7 @@ async def my_tool(ctx: Context):
 ```
 
 **Context benefits:**
+
 - User visibility into long operations
 - Progress tracking for uploads/downloads
 - Error distinction (info/warning/error)
@@ -126,6 +130,7 @@ async def my_tool(ctx: Context):
 ```
 
 **Annotation guidelines:**
+
 - `readOnlyHint=True`: List, search, check operations
 - `readOnlyHint=False`: Install, create, compile operations
 - `destructiveHint=True`: Upload (overwrites board firmware)
@@ -177,6 +182,7 @@ async def get_board_info(fqbn: str) -> str:
 ```
 
 **Resource benefits:**
+
 - Declarative data access
 - Cacheable by MCP clients
 - Clean separation from tools
@@ -189,7 +195,7 @@ async def get_board_info(fqbn: str) -> str:
 @mcp.prompt()
 def full_development_workflow():
     return """Complete Arduino development workflow:
-    
+
     1. Check installation
     2. Detect boards
     3. Install cores/libraries
@@ -198,6 +204,7 @@ def full_development_workflow():
 ```
 
 **Prompt types:**
+
 - Example code (blink_led_example)
 - Templates (sensor_reading_example)
 - Workflows (full_development_workflow)
@@ -220,6 +227,7 @@ result = ImageConverter.image_to_c_array(
 ```
 
 **Supported formats:**
+
 - `monochrome`: 1-bit (OLED displays)
 - `grayscale_2bit`: 4-level grayscale
 - `grayscale_4bit`: 16-level grayscale
@@ -228,6 +236,7 @@ result = ImageConverter.image_to_c_array(
 - `rgb888`: 24-bit color
 
 **Best practices:**
+
 - Test all rotations (0, 90, 180, 270) to find correct orientation
 - Adjust threshold for monochrome (50%-70% typical)
 - Use `keep_aspect=True` to maintain proportions
@@ -239,9 +248,11 @@ result = ImageConverter.image_to_c_array(
 
 ```python
 try:
-    ser = serial.Serial(port, baudrate, timeout=1)
-    time.sleep(0.5)  # Allow port to stabilize
-    
+    ser = serial.Serial(port, baudrate, timeout=1, dsrdtr=False, rts=False)
+    ser.dtr = False
+    ser.rts = False
+    time.sleep(0.1)
+
     while (time.time() - start_time) < duration:
         if ser.in_waiting > 0:
             line = ser.readline().decode('utf-8', errors='ignore')
@@ -250,24 +261,39 @@ finally:
 ```
 
 **Common baud rates:**
+
 - 9600 (default, most compatible)
 - 115200 (fast, modern boards)
 - 57600, 38400 (alternatives)
 
+**Board reset behavior:**
+
+- `reset_board=False` (default): Prevents board reset when opening serial connection
+  - Preserves running sketch state
+  - DTR/RTS signals disabled
+  - Use for monitoring already-running sketches
+- `reset_board=True`: Allows board reset (traditional behavior)
+  - Board restarts when serial opens
+  - Sketch runs from beginning
+  - Use when you want to restart the sketch
+
 ### 10. Common FQBNs (Fully Qualified Board Names)
 
 **AVR Boards:**
+
 - `arduino:avr:uno` - Arduino Uno
 - `arduino:avr:mega` - Arduino Mega 2560
 - `arduino:avr:nano` - Arduino Nano
 - `arduino:avr:leonardo` - Arduino Leonardo
 
 **ESP Boards:**
+
 - `esp32:esp32:esp32` - ESP32 DevKit
 - `esp8266:esp8266:generic` - ESP8266
 - `esp32:esp32:esp32s3` - ESP32-S3
 
 **Other:**
+
 - `arduino:samd:mkr1000` - Arduino MKR1000
 - `STMicroelectronics:stm32:GenF1` - STM32 boards
 
@@ -284,12 +310,13 @@ finally:
 6. Edit Code → Use resources or file system
 7. Compile → compile_sketch("./MyProject", "arduino:avr:uno")
 8. Upload → upload_sketch("./MyProject", "arduino:avr:uno", "COM3")
-9. Monitor → serial_monitor("COM3", duration=20, baudrate=9600)
+9. Monitor → serial_monitor("COM3", duration=20, baudrate=9600, reset_board=False)
 ```
 
 ### 12. Troubleshooting Common Issues
 
 **Upload Failures:**
+
 - Verify board is connected: `list_connected_boards()`
 - Check port access: `verify_port(port)`
 - Correct FQBN: Use exact FQBN from `board list`
@@ -297,20 +324,24 @@ finally:
 - Try different USB port/cable
 
 **Compilation Errors:**
+
 - Install required libraries: `search_libraries()` → `install_library()`
 - Install board core: `list_installed_cores()` → `install_core()`
 - Check sketch syntax
 
 **Port Detection:**
+
 - Windows: May need driver installation (CH340, CP210x)
 - Linux: Add user to `dialout` group: `sudo usermod -a -G dialout $USER`
 - macOS: Use `/dev/cu.*` not `/dev/tty.*` for uploads
 
 **Serial Monitor No Output:**
+
 - Verify correct baud rate
 - Check `Serial.begin()` in sketch
 - Ensure sketch is running (compile + upload)
 - Wait longer (some sketches have startup delay)
+- If board resets on connect, use `reset_board=False` to preserve state
 
 ### 13. Cross-Platform Considerations
 
@@ -325,6 +356,7 @@ port_patterns = platform_config.port_patterns
 ```
 
 **Platform-specific handling:**
+
 - Windows: No permission errors, COM ports
 - macOS: Both tty/cu devices, prefer cu for writing
 - Linux: Permission issues common, USB device paths
@@ -348,6 +380,7 @@ uv run fastmcp run arduino_mcp/server.py:mcp
 ```
 
 **Why uv:**
+
 - Fast dependency resolution
 - Lock file for reproducibility (uv.lock)
 - Modern Python tooling
@@ -371,6 +404,7 @@ uv run fastmcp run arduino_mcp/server.py:mcp
 ```
 
 **Test scenarios:**
+
 - Board detection without boards connected
 - Upload without port access
 - Install non-existent library
@@ -380,32 +414,38 @@ uv run fastmcp run arduino_mcp/server.py:mcp
 ### 16. Performance Optimization
 
 **Command execution:**
+
 - Reuse CLI instance (singleton pattern)
 - Cache board lists for repeated queries
 - Avoid repeated core/library searches
 
 **Serial operations:**
+
 - Use appropriate timeouts
 - Buffer serial data efficiently
 - Close ports immediately after use
 
 **JSON formatting:**
+
 - Use `json.dumps(data, indent=2)` for readability
 - Return structured data when possible
 
 ### 17. Security Considerations
 
 **CLI injection prevention:**
+
 - Arduino CLI wrapper validates commands
 - No arbitrary shell execution
 - Command arguments are properly escaped
 
 **Port access:**
+
 - Verify port exists before opening
 - Handle permission errors gracefully
 - Close serial connections properly
 
 **File system access:**
+
 - Validate sketch paths
 - Use Path objects for cross-platform safety
 - No arbitrary file system access in tools
@@ -433,25 +473,93 @@ uv run fastmcp run arduino_mcp/server.py:mcp
 ```
 
 **Claude Desktop:**
+
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Linux: `~/.config/Claude/claude_desktop_config.json`
 
 ### 19. Future Enhancements
 
-**Potential additions:**
-- Board configuration management
-- Multi-board upload support
-- Sketch testing framework integration
+**Recently Added:**
+
+- **Arduino Lint** - Project validation and quality checks
+  - Checks structure, metadata, and configuration
+  - Compliance levels: permissive/specification/strict
+  - Library Manager submission validation
+  - JSON output for automation
+  - Tool: `lint_arduino_project()`
+  - Installation: https://arduino.github.io/arduino-lint/latest/
+
+**Potential future additions:**
+
+- Arduino Language Server integration for code diagnostics
 - Real-time serial plotting
 - OTA (Over-The-Air) updates for WiFi boards
-- Library dependency resolution
-- Sketch template management
-- Code linting and style checking
+- Multi-board upload support
+- Board configuration management
+- Sketch testing framework integration
 
-### 20. Common Pitfalls
+### 20. Arduino Lint Integration
+
+**Installation check:**
+
+```python
+if lint.is_installed():
+    version = lint.get_version()
+```
+
+**Lint a project:**
+
+```python
+result = lint.lint_project(
+    path="./MyLibrary",
+    compliance="strict",
+    library_manager="submit"
+)
+```
+
+**Compliance levels:**
+
+- `permissive` - Minimum requirements, severe violations only
+- `specification` - Full spec compliance (default)
+- `strict` - Best practices enforcement
+
+**Library Manager modes:**
+
+- `None` - Standard project validation
+- `submit` - First-time Library Manager submission checks
+- `update` - Release update validation
+
+**Common use cases:**
+
+- Validate sketch structure before sharing
+- Check library metadata completeness
+- Prepare for Library Manager submission
+- CI/CD integration with JSON output
+- Enforce team coding standards
+
+**Tool usage:**
+
+```python
+lint_arduino_project(
+    project_path="./MyLibrary",
+    compliance="strict",
+    library_manager="submit"
+)
+```
+
+**Output format:**
+
+Returns JSON with:
+
+- `success`: Boolean indicating if linting passed
+- `lint_results`: Detailed validation results
+- `stdout`/`stderr`: Raw output from Arduino Lint
+
+### 21. Common Pitfalls
 
 **Avoid:**
+
 - ❌ Assuming Arduino CLI is installed
 - ❌ Hardcoding COM ports or paths
 - ❌ Not closing serial ports
@@ -464,6 +572,7 @@ uv run fastmcp run arduino_mcp/server.py:mcp
 - ❌ Not waiting for port stabilization
 
 **Do:**
+
 - ✅ Check CLI installation first
 - ✅ Use PortDetector for platform-aware detection
 - ✅ Always close serial connections
@@ -535,6 +644,7 @@ void loop() {
 ```
 
 **Common patterns:**
+
 - Digital I/O: `pinMode()`, `digitalWrite()`, `digitalRead()`
 - Analog I/O: `analogRead()`, `analogWrite()` (PWM)
 - Serial: `Serial.begin()`, `Serial.print()`, `Serial.read()`
@@ -543,11 +653,13 @@ void loop() {
 ### Memory Constraints
 
 **Arduino Uno limitations:**
+
 - Flash: 32KB (program storage)
 - SRAM: 2KB (runtime memory)
 - EEPROM: 1KB (persistent storage)
 
 **Best practices:**
+
 - Use `PROGMEM` for large constants (images, strings)
 - Minimize global variables
 - Use `F()` macro for string literals: `Serial.println(F("Hello"))`
@@ -557,17 +669,20 @@ void loop() {
 ### Display Integration
 
 **OLED displays (SSD1306, SH1106):**
+
 - I2C or SPI communication
 - Typically 128x64 or 128x32 pixels
 - Monochrome (1-bit per pixel)
 - Use image converter with `format_type="monochrome"`
 
 **TFT displays (ILI9341, ST7735):**
+
 - SPI communication
 - Color displays (RGB565)
 - Use image converter with `format_type="rgb565"`
 
 **E-Paper displays:**
+
 - Ultra-low power
 - Slow refresh (1-2 seconds)
 - Excellent outdoor visibility
@@ -576,16 +691,19 @@ void loop() {
 ### Communication Protocols
 
 **Serial (UART):**
+
 - Simple 2-wire (TX/RX)
 - Common baud rates: 9600, 115200
 - Used for debugging and PC communication
 
 **I2C:**
+
 - 2-wire bus (SDA, SCL)
 - Multiple devices on same bus
 - Common for sensors and displays
 
 **SPI:**
+
 - 4-wire (MOSI, MISO, SCK, CS)
 - Faster than I2C
 - Common for displays and SD cards
@@ -593,12 +711,14 @@ void loop() {
 ### Power Management
 
 **Low-power techniques:**
+
 - Use `sleep` modes between operations
 - Turn off peripherals when not in use
 - Lower clock speed for battery operation
 - Use external interrupts for wake-up
 
 **Power considerations:**
+
 - USB power: ~500mA max
 - Battery operation: Calculate runtime
 - External power supply: Check voltage regulator limits
@@ -606,17 +726,20 @@ void loop() {
 ### Debugging Strategies
 
 **Serial debugging:**
+
 ```cpp
 Serial.print("Value: ");
 Serial.println(value);
 ```
 
 **LED indicators:**
+
 ```cpp
 digitalWrite(LED_BUILTIN, state);  // Visual feedback
 ```
 
 **Timing checks:**
+
 ```cpp
 unsigned long start = millis();
 // ... operation ...
@@ -625,6 +748,7 @@ Serial.println(millis() - start);
 ```
 
 **Common issues:**
+
 - Watchdog timer resets
 - Memory corruption (check RAM usage)
 - Timing issues (avoid delay in interrupts)
@@ -650,6 +774,7 @@ Serial.println(millis() - start);
 **User**: "I want to make an LED blink"
 
 **Good Response:**
+
 1. Check if Arduino CLI is installed
 2. Detect connected boards
 3. Use blink_led_example prompt
@@ -659,6 +784,7 @@ Serial.println(millis() - start);
 7. Confirm upload success
 
 **Don't:**
+
 - Assume user knows FQBN
 - Skip board detection
 - Provide code without context
@@ -670,6 +796,7 @@ Serial.println(millis() - start);
 This MCP server provides a comprehensive bridge between AI agents and Arduino development. By following these best practices, you can create robust, cross-platform Arduino development workflows that work seamlessly with LLM-based assistants.
 
 Key takeaways:
+
 - Leverage all MCP features (Tools, Resources, Prompts, Context)
 - Handle platform differences transparently
 - Provide clear error messages and recovery paths
@@ -678,5 +805,3 @@ Key takeaways:
 - Keep embedded constraints in mind
 
 For questions or contributions: https://github.com/niradler/arduino-mcp
-
-

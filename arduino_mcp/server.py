@@ -6,12 +6,14 @@ import glob
 from .cli_wrapper import ArduinoCLI, ArduinoCLIError
 from .port_detector import PortDetector
 from .image_converter import ImageConverter
+from .lint_wrapper import ArduinoLint
 from .platform_utils import platform_config, env_config
 from .serial_manager import SerialBuffer
 
 mcp = FastMCP("Arduino MCP Server")
 
 cli = ArduinoCLI()
+lint = ArduinoLint()
 
 print("\n" + "="*60)
 print("Arduino MCP Server - Dependency Check")
@@ -30,12 +32,21 @@ else:
     print(platform_config.format_status("skip", "ImageMagick: Not Found (optional)"))
     print("  Install: https://imagemagick.org/script/download.php")
 
+if lint.is_installed():
+    version = lint.get_version()
+    print(platform_config.format_status("ok", f"Arduino Lint: {version}"))
+else:
+    print(platform_config.format_status("skip", "Arduino Lint: Not Found (optional)"))
+    print("  Install: https://arduino.github.io/arduino-lint/latest/installation/")
+
 sketch_dir = env_config.get_default_sketch_dir()
 print(platform_config.format_status("info", f"Sketch Directory: {sketch_dir}"))
 if env_config.has_overrides():
     print(platform_config.format_status("info", "Environment Overrides Active:"))
     if env_config.ARDUINO_CLI_PATH != 'arduino-cli':
         print(f"  ARDUINO_CLI_PATH={env_config.ARDUINO_CLI_PATH}")
+    if env_config.ARDUINO_LINT_PATH != 'arduino-lint':
+        print(f"  ARDUINO_LINT_PATH={env_config.ARDUINO_LINT_PATH}")
     if env_config.MCP_SKETCH_DIR:
         print(f"  MCP_SKETCH_DIR={env_config.MCP_SKETCH_DIR}")
     if env_config.ARDUINO_SERIAL_BUFFER_SIZE != 10:
@@ -361,6 +372,7 @@ async def serial_monitor(
     baudrate: int = 115200,
     send_commands: Optional[str] = None,
     save_to_file: Optional[str] = None,
+    reset_board: bool = False,
     ctx: Context = None
 ) -> str:
     import serial
@@ -369,14 +381,25 @@ async def serial_monitor(
     buffer = SerialBuffer(max_size_mb=env_config.ARDUINO_SERIAL_BUFFER_SIZE)
     
     if ctx:
-        await ctx.info(f"Opening serial monitor on {port} at {baudrate} baud for {duration}s")
+        reset_msg = " (will reset board)" if reset_board else " (no reset)"
+        await ctx.info(f"Opening serial monitor on {port} at {baudrate} baud for {duration}s{reset_msg}")
         if send_commands:
             await ctx.info(f"Will send commands: {send_commands[:50]}...")
         await ctx.report_progress(progress=0, total=duration)
     
     try:
-        ser = serial.Serial(port, baudrate, timeout=1)
-        time.sleep(0.5)
+        if reset_board:
+            ser = serial.Serial(port, baudrate, timeout=1)
+            time.sleep(0.5)
+        else:
+            ser = serial.Serial()
+            ser.port = port
+            ser.baudrate = baudrate
+            ser.timeout = 1
+            ser.dtr = False
+            ser.rts = False
+            ser.open()
+            time.sleep(0.1)
         
         if send_commands:
             commands = send_commands.split('\\n') if '\\n' in send_commands else [send_commands]
@@ -736,6 +759,57 @@ def troubleshooting_guide():
 1. Search for library: `search_libraries`
 2. Install missing libraries: `install_library`
 3. Check installed: `list_installed_libraries`"""
+
+
+@mcp.prompt()
+def arduino_lint_workflow():
+    return """Arduino project quality check with lint:
+
+1. Basic validation:
+   lint_arduino_project(project_path="./MyProject", compliance="specification")
+
+2. Strict best practices:
+   lint_arduino_project(project_path="./MyLibrary", compliance="strict")
+
+3. Library Manager submission:
+   lint_arduino_project(project_path="./MyLibrary", compliance="strict", library_manager="submit")
+
+Compliance: permissive, specification, strict
+Library Manager: submit (first time), update (releases)"""
+
+
+@mcp.tool(
+    annotations={
+        "title": "Lint Arduino Project",
+        "readOnlyHint": True,
+        "openWorldHint": True
+    }
+)
+async def lint_arduino_project(
+    project_path: str,
+    compliance: str = "specification",
+    library_manager: Optional[str] = None,
+    ctx: Context = None
+) -> str:
+    """Lint Arduino project for compliance and best practices.
+    
+    Args:
+        project_path: Path to sketch, library, or platform
+        compliance: "permissive", "specification", or "strict"
+        library_manager: None, "submit", or "update" for Library Manager checks
+    """
+    if not lint.is_installed():
+        return "Arduino Lint not installed. Install: https://arduino.github.io/arduino-lint/latest/installation/"
+    
+    await ctx.info(f"Linting {project_path}...")
+    result = lint.lint_project(project_path, compliance, library_manager)
+    
+    if result["success"]:
+        await ctx.info("Linting completed")
+        return json.dumps(result, indent=2)
+    else:
+        await ctx.error("Linting failed")
+        return json.dumps(result, indent=2)
 
 
 def main():
