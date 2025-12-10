@@ -122,15 +122,8 @@ Alternatively, add to your global Cursor settings:
 {
   "mcpServers": {
     "arduino": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:/Projects/mcp/arduino-mcp",
-        "run",
-        "python",
-        "-m",
-        "arduino_mcp.server"
-      ]
+      "command": "uvx",
+      "args": ["arduino-mcp"]
     }
   }
 }
@@ -148,15 +141,8 @@ Add to your MCP configuration file:
 {
   "mcpServers": {
     "arduino": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:/Projects/mcp/arduino-mcp",
-        "run",
-        "python",
-        "-m",
-        "arduino_mcp.server"
-      ]
+      "command": "uvx",
+      "args": ["arduino-mcp"]
     }
   }
 }
