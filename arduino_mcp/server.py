@@ -2,7 +2,6 @@ from fastmcp import FastMCP, Context
 import json
 from typing import Optional
 from pathlib import Path
-import glob
 from .cli_wrapper import ArduinoCLI, ArduinoCLIError
 from .port_detector import PortDetector
 from .image_converter import ImageConverter
@@ -59,6 +58,50 @@ print("="*60 + "\n")
 
 @mcp.tool(
     annotations={
+        "title": "Check Arduino CLI Installation",
+        "readOnlyHint": True
+    }
+)
+async def check_arduino_cli_installed(ctx: Context = None) -> str:
+    """
+    Check whether Arduino CLI is installed and return its version.
+    Always run this first when starting a new Arduino session.
+    """
+    if ctx:
+        await ctx.info("Checking Arduino CLI installation...")
+    if cli.is_installed():
+        version = cli.get_version()
+        return f"Arduino CLI is installed.\nVersion: {version}"
+    return (
+        "Arduino CLI is NOT installed or not found in PATH.\n\n"
+        "Install it from: https://arduino.github.io/arduino-cli/latest/installation/\n\n"
+        "Windows: winget install ArduinoSA.CLI\n"
+        "macOS:   brew install arduino-cli\n"
+        "Linux:   curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh"
+    )
+
+
+@mcp.tool(
+    annotations={
+        "title": "Get Arduino CLI Help",
+        "readOnlyHint": True
+    }
+)
+async def get_arduino_help(command: str = "", ctx: Context = None) -> str:
+    """
+    Get help text for Arduino CLI commands.
+
+    Args:
+        command: Specific command to get help for, e.g. "compile", "upload", "board".
+                 Leave empty for general help.
+    """
+    if ctx:
+        await ctx.info(f"Fetching help for: {'arduino-cli ' + command if command else 'arduino-cli'}")
+    return cli.get_help(command if command else None)
+
+
+@mcp.tool(
+    annotations={
         "title": "Execute Raw Arduino CLI Command",
         "readOnlyHint": False,
         "openWorldHint": True
@@ -68,7 +111,8 @@ async def arduino_cli_command(command: str, ctx: Context) -> str:
     try:
         await ctx.info(f"Executing: arduino-cli {command}")
         
-        args = command.split()
+        import shlex
+        args = shlex.split(command)
         result = cli.run_command(args)
         
         if result["success"]:
@@ -118,6 +162,64 @@ async def list_ports(arduino_only: bool = False, ctx: Context = None) -> str:
         return json.dumps(ports, indent=2)
 
 
+@mcp.tool(
+    annotations={
+        "title": "Find Arduino Serial Ports",
+        "readOnlyHint": True
+    }
+)
+async def find_arduino_ports(ctx: Context = None) -> str:
+    """
+    Find serial ports that have an Arduino (or Arduino-compatible) device connected.
+    Filters by known USB chip identifiers: CH340, CP210x, FTDI, Arduino.
+    Use get_best_port() if you just want the single recommended port.
+    """
+    if ctx:
+        await ctx.info("Scanning for Arduino devices on serial ports...")
+    ports = PortDetector.find_arduino_ports()
+    if not ports:
+        all_ports = PortDetector.list_ports()
+        msg = "No Arduino devices detected on any serial port.\n\n"
+        if all_ports:
+            msg += f"Other ports available ({len(all_ports)}):\n"
+            msg += json.dumps(all_ports, indent=2)
+        else:
+            msg += "No serial ports found at all. Check USB connection."
+        return msg
+    if ctx:
+        await ctx.info(f"Found {len(ports)} Arduino device(s)")
+    return f"Arduino devices found ({len(ports)}):\n" + json.dumps(ports, indent=2)
+
+
+@mcp.tool(
+    annotations={
+        "title": "Get Best Arduino Port",
+        "readOnlyHint": True
+    }
+)
+async def get_best_port(ctx: Context = None) -> str:
+    """
+    Auto-detect and return the single best port for uploading to an Arduino.
+    Prioritises known Arduino chips (CP210x, CH340, FTDI) over generic ports.
+    Use this instead of manually checking ports when you just want to upload.
+    """
+    if ctx:
+        await ctx.info("Auto-detecting best Arduino port...")
+    port = PortDetector.get_best_port()
+    if port:
+        if ctx:
+            await ctx.info(f"Recommended port: {port}")
+        return f"Recommended port: {port}"
+    return (
+        "No suitable port found.\n\n"
+        "Tips:\n"
+        "- Check that your Arduino is plugged in via USB\n"
+        "- Try a different USB cable or port\n"
+        "- On Windows, check Device Manager for the COM port\n"
+        "- Run find_arduino_ports() for more detail"
+    )
+
+
 @mcp.tool(annotations={"readOnlyHint": True, "openWorldHint": True})
 async def list_connected_boards(ctx: Context) -> str:
     try:
@@ -142,32 +244,51 @@ async def verify_port(port: str, ctx: Context) -> str:
 
 @mcp.tool(
     annotations={
-        "title": "Search Arduino Packages",
+        "title": "Search Arduino Board Cores",
         "readOnlyHint": True,
         "openWorldHint": True
     }
 )
-async def search(query: str, package_type: str, ctx: Context) -> str:
+async def search_cores(query: str, ctx: Context) -> str:
     """
-    Search for Arduino cores or libraries.
-    
-    Note: Library searches return only latest version details to reduce output size.
-    Use more specific search terms to narrow results (e.g., "Adafruit_SSD1306" instead of "display").
+    Search for Arduino board cores (platforms) by keyword.
+
+    Use this to find the right core to install for your board type.
+    Examples: "esp32", "avr", "samd", "rp2040"
+
+    After finding a core, install it with install_core().
     """
-    if package_type not in ["core", "library"]:
-        return "Error: package_type must be 'core' or 'library'"
-    
     try:
-        await ctx.info(f"Searching for {package_type}s: {query}")
-        
-        if package_type == "core":
-            result = cli.core_search(query)
-        else:
-            result = cli.lib_search(query)
-        
+        await ctx.info(f"Searching for cores: {query}")
+        result = cli.core_search(query)
         return json.dumps(result, indent=2)
     except ArduinoCLIError as e:
-        await ctx.error(f"Search failed: {str(e)}")
+        await ctx.error(f"Core search failed: {str(e)}")
+        return f"Error: {str(e)}"
+
+
+@mcp.tool(
+    annotations={
+        "title": "Search Arduino Libraries",
+        "readOnlyHint": True,
+        "openWorldHint": True
+    }
+)
+async def search_libraries(query: str, ctx: Context) -> str:
+    """
+    Search for Arduino libraries by keyword.
+
+    Use specific terms for better results (e.g., "Adafruit SSD1306" not just "display").
+    Note: Returns only latest version details to keep output manageable.
+
+    After finding a library, install it with install_library().
+    """
+    try:
+        await ctx.info(f"Searching for libraries: {query}")
+        result = cli.lib_search(query)
+        return json.dumps(result, indent=2)
+    except ArduinoCLIError as e:
+        await ctx.error(f"Library search failed: {str(e)}")
         return f"Error: {str(e)}"
 
 
@@ -342,6 +463,109 @@ async def create_new_sketch(sketch_name: str, path: Optional[str] = None, ctx: C
         if ctx:
             await ctx.error(f"Sketch creation failed: {str(e)}")
         return f"Error: {str(e)}"
+
+
+@mcp.tool(
+    annotations={
+        "title": "Write Code to Arduino Sketch",
+        "readOnlyHint": False,
+        "destructiveHint": True
+    }
+)
+async def write_sketch(sketch_path: str, code: str, ctx: Context = None) -> str:
+    """
+    Write or overwrite code in an Arduino sketch (.ino) file.
+
+    Args:
+        sketch_path: Path to the .ino file or its parent folder.
+                     If a folder is given, writes to the matching .ino file inside it.
+                     Example: "C:/Users/uchac/Arduino/BlinkLED" or
+                              "C:/Users/uchac/Arduino/BlinkLED/BlinkLED.ino"
+        code: The full Arduino C++ code to write into the file.
+    """
+    try:
+        path = Path(sketch_path)
+
+        # Resolve whether we got a folder or a .ino file path
+        if path.suffix == ".ino":
+            ino_path = path
+        else:
+            # Folder path given (existing or not) — write to matching .ino inside it
+            ino_path = path / f"{path.name}.ino"
+
+        # Create parent directories if they don't exist
+        ino_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write the code
+        ino_path.write_text(code, encoding="utf-8")
+
+        line_count = code.count("\n") + 1
+        char_count = len(code)
+
+        if ctx:
+            await ctx.info(f"Written {char_count} characters to {ino_path}")
+
+        return (
+            f"Code written successfully.\n"
+            f"File   : {ino_path}\n"
+            f"Lines  : {line_count}\n"
+            f"Characters: {char_count}"
+        )
+
+    except PermissionError:
+        if ctx:
+            await ctx.error(f"Permission denied: {sketch_path}")
+        return f"Error: Permission denied writing to {sketch_path}"
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Failed to write sketch: {str(e)}")
+        return f"Error: {str(e)}"
+    
+
+@mcp.tool(
+    annotations={
+        "title": "Initialize Arduino CLI Config",
+        "readOnlyHint": False
+    }
+)
+async def initialize_config(ctx: Context = None) -> str:
+    """
+    Initialize the Arduino CLI configuration file.
+    Run this once after installing Arduino CLI for the first time,
+    or if the config file is missing or corrupted.
+    """
+    if ctx:
+        await ctx.info("Initializing Arduino CLI configuration...")
+    result = cli.config_init()
+    if result["success"]:
+        if ctx:
+            await ctx.info("Configuration initialized successfully")
+        return f"Arduino CLI configuration initialized.\n{result['stdout']}"
+    return f"Failed to initialize configuration:\n{result['stderr']}"
+
+
+@mcp.tool(
+    annotations={
+        "title": "Check ImageMagick Installation",
+        "readOnlyHint": True
+    }
+)
+async def check_imagemagick_installed(ctx: Context = None) -> str:
+    """
+    Check whether ImageMagick is installed.
+    ImageMagick is required for the convert_image_to_c_array tool.
+    It is optional for all other Arduino functionality.
+    """
+    if ctx:
+        await ctx.info("Checking ImageMagick installation...")
+    if ImageConverter.is_imagemagick_installed():
+        return "ImageMagick is installed and ready to use."
+    return (
+        "ImageMagick is NOT installed.\n\n"
+        "It is only needed for image-to-C-array conversion (OLED/TFT displays).\n"
+        "Install from: https://imagemagick.org/script/download.php\n\n"
+        "Windows: winget install ImageMagick.ImageMagick"
+    )
 
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -800,15 +1024,18 @@ async def lint_arduino_project(
     """
     if not lint.is_installed():
         return "Arduino Lint not installed. Install: https://arduino.github.io/arduino-lint/latest/installation/"
-    
-    await ctx.info(f"Linting {project_path}...")
+
+    if ctx:
+        await ctx.info(f"Linting {project_path}...")
     result = lint.lint_project(project_path, compliance, library_manager)
-    
+
     if result["success"]:
-        await ctx.info("Linting completed")
+        if ctx:
+            await ctx.info("Linting completed")
         return json.dumps(result, indent=2)
     else:
-        await ctx.error("Linting failed")
+        if ctx:
+            await ctx.error("Linting failed")
         return json.dumps(result, indent=2)
 
 

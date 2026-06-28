@@ -134,10 +134,20 @@ class ArduinoCLI:
         return result
     
     def compile(self, sketch_path: str, fqbn: str) -> Dict[str, Any]:
-        return self.run_command(["compile", "--fqbn", fqbn, sketch_path])
+        args = ["compile"]
+        if fqbn and fqbn.strip():
+            args += ["--fqbn", fqbn]
+        args.append(sketch_path)
+        return self.run_command(args)
     
     def upload(self, sketch_path: str, fqbn: str, port: str) -> Dict[str, Any]:
-        return self.run_command(["upload", "--fqbn", fqbn, "--port", port, sketch_path])
+        args = ["upload"]
+        if fqbn and fqbn.strip():
+            args += ["--fqbn", fqbn]
+        if port and port.strip():
+            args += ["--port", port]
+        args.append(sketch_path)
+        return self.run_command(args)
     
     def sketch_new(self, sketch_name: str, path: Optional[str] = None) -> Dict[str, Any]:
         args = ["sketch", "new", sketch_name]
